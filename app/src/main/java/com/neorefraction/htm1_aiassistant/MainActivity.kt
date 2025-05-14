@@ -18,8 +18,9 @@ import android.hardware.camera2.CameraDevice  // New API (hardware.Camera is dep
 import android.hardware.camera2.CameraManager
 import android.view.Surface
 import android.view.TextureView
-import android.view.WindowInsets
 import android.widget.Toast
+import androidx.lifecycle.MediatorLiveData
+import androidx.lifecycle.MutableLiveData
 
 const val CAMERA_PERMISSION_REQUEST_CODE = 100
 
@@ -31,6 +32,11 @@ class MainActivity : AppCompatActivity() {
     private lateinit var cameraService: CameraManager
     private var cameraDevice: CameraDevice? = null
     private lateinit var cameraId: String
+
+    // Observables
+    private val _isPermissionGranted = MutableLiveData<Boolean>()
+    private val _isSurfaceAvailable = MutableLiveData<Boolean>()
+    private val _isCameraReady = MediatorLiveData<Boolean>()
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -60,13 +66,15 @@ class MainActivity : AppCompatActivity() {
         // Set Android Camera service as camera manager
         cameraService = getSystemService(Context.CAMERA_SERVICE) as CameraManager
 
-        // Verifies that the TextureView is ready to display camera image
+        // Implements TextureView surface listener interface
         textureView.surfaceTextureListener = object : TextureView.SurfaceTextureListener {
+            // Callback for surface when is ready to be used
             override fun onSurfaceTextureAvailable(
                 surface: SurfaceTexture, width: Int, height: Int) {
-                openCamera()
+                _isSurfaceAvailable.value = true
             }
 
+            // Callback for surface when size changes
             override fun onSurfaceTextureSizeChanged(
                 surface: SurfaceTexture, width: Int, height: Int) {}
 
@@ -74,20 +82,24 @@ class MainActivity : AppCompatActivity() {
                 return false
             }
 
-            override fun onSurfaceTextureUpdated(surface: SurfaceTexture) {}
+            override fun onSurfaceTextureUpdated(surface: SurfaceTexture) {} // Not used
+        }
+
+        _isCameraReady.observe(this) { ready ->
+            if (ready == true) {
+                openCamera()
+            }
         }
     }
 
-    // Método que se llama después de que el usuario haya respondido a la solicitud de permisos
+    // Callback for Android Permissions once the user response the permissions request
     override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults)
 
-        if (requestCode == CAMERA_PERMISSION_REQUEST_CODE) {
-            // Verificar si el permiso fue concedido
-            if (grantResults.isNotEmpty() && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
-                // Si el permiso es concedido, continuar con la funcionalidad de la cámara
-                openCamera()
-            } else {
+        if (requestCode == CAMERA_PERMISSION_REQUEST_CODE) { // Permissions for camera
+            val granted = grantResults.isNotEmpty() && grantResults[0] == PackageManager.PERMISSION_GRANTED
+            _isPermissionGranted.value = granted
+            if(!granted) {
                 // Si el permiso no fue concedido, mostrar un mensaje al usuario
                 Toast.makeText(this, "Permission denied! Unable to use the camera.", Toast.LENGTH_SHORT).show()
             }
@@ -117,8 +129,7 @@ class MainActivity : AppCompatActivity() {
                     }
                 }, null)
             } else {
-                // Si no se tienen permisos, muestra un mensaje
-                Toast.makeText(this, "No se tienen permisos para usar la cámara", Toast.LENGTH_SHORT).show()
+                Toast.makeText(this, "There are no camera permissions", Toast.LENGTH_SHORT).show()
             }
         } catch (e: CameraAccessException) {
             e.printStackTrace()
@@ -150,5 +161,11 @@ class MainActivity : AppCompatActivity() {
 
         // Crear una sesión de captura
         cameraDevice.createCaptureSession(listOf(surface), cameraCaptureSessionCallback, null)
+    }
+
+    private fun updateCameraReadyState() {
+        val permission = _isPermissionGranted.value ?: false
+        val surface = _isSurfaceAvailable.value ?: false
+        _isCameraReady.value = permission && surface
     }
 }
