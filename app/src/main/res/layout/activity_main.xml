@@ -7,12 +7,11 @@
     android:id="@+id/main"
     android:contentDescription="hf_no_number">
 
-    <ImageView
-        android:id="@+id/ivCamera"
+    <TextureView
+        android:id="@+id/tvCamera"
         android:contentDescription="@string/cameraDescription"
         android:layout_width="match_parent"
         android:layout_height="match_parent"
-        android:scaleType="fitCenter"
-        android:src="@drawable/ic_camera" />
+        android:scaleType="fitCenter" />
 
 </LinearLayout>
