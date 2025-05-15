@@ -1,68 +1,79 @@
 package com.neorefraction.htm1_aiassistant.viewmodel
 
 import android.Manifest
-import android.content.Context.CAMERA_SERVICE
+import android.app.Activity
+import android.content.Context
 import android.content.pm.PackageManager
-import android.hardware.camera2.CameraAccessException
 import android.hardware.camera2.CameraDevice
 import android.hardware.camera2.CameraManager
-import android.util.Log
-import android.widget.Toast
-import androidx.annotation.RequiresPermission
+import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat.checkSelfPermission
-import androidx.core.content.ContextCompat.getSystemService
 import androidx.lifecycle.LiveData
+import androidx.lifecycle.MediatorLiveData
 import androidx.lifecycle.MutableLiveData
+import androidx.lifecycle.ViewModel
 
-class MainViewModel {
+const val CAMERA_PERMISSION_REQUEST_CODE = 100
 
-    // ViewModel required attributes
-    private var isPermissionAccepted: Boolean = false
-    private var isSurfaceAvailable: Boolean = false
+class MainViewModel : ViewModel() {
+
+    private val _isPermissionGranted = MutableLiveData<Boolean>(false)
+    private val _isSurfaceAvailable = MutableLiveData<Boolean>(false)
+
+    private val _camera = MutableLiveData<CameraDevice?>()
+    val camera: LiveData<CameraDevice?> = _camera
+
+    val isAppReady: LiveData<Boolean> = MediatorLiveData<Boolean>().apply {
+        var permissions = false
+        var surface = false
+
+        addSource(_isPermissionGranted) {
+            permissions = it
+            value = permissions && surface
+        }
+
+        addSource(_isSurfaceAvailable) {
+            surface = it
+            value = permissions && surface
+        }
+    }
+
     private lateinit var cameraManager: CameraManager
 
-    // Required LiveData
-    private val _camera: MutableLiveData<CameraDevice?> = MutableLiveData<CameraDevice?>(null)
-    val camera: LiveData<CameraDevice?> get() = this._camera
-
-    private val _isAppReady: MutableLiveData<Boolean> = MutableLiveData<Boolean>(false)
-    val isAppReady: LiveData<Boolean> get() = this._isAppReady
-
-    fun setCameraManager(cameraManager: CameraManager) {
-        this.cameraManager = cameraManager
-    }
-
     fun setPermission(result: Int) {
-        this.isPermissionAccepted = result == PackageManager.PERMISSION_GRANTED
-        this._isAppReady.value = this.isPermissionAccepted && this.isSurfaceAvailable
+        _isPermissionGranted.value = result == PackageManager.PERMISSION_GRANTED
     }
 
-    fun setSurfaceAvailability(availability: Boolean) {
-        this.isSurfaceAvailable = availability
-        this._isAppReady.value = this.isPermissionAccepted && this.isSurfaceAvailable
+    fun setSurfaceAvailability(available: Boolean) {
+        _isSurfaceAvailable.value = available
     }
 
-    @RequiresPermission(Manifest.permission.CAMERA)
-    fun openCamera() {
-        try {
-            cameraManager.openCamera(this.cameraManager.cameraIdList[0], object : CameraDevice.StateCallback() {
-                override fun onOpened(camera: CameraDevice) {
-                    Log.w("JOHNNY", "LA CAMARA SE HA ABIERTO")
-                    _camera.value = camera
-                }
+    fun requestCameraPermissions(activity: Activity) {
+        ActivityCompat.requestPermissions(activity, arrayOf(Manifest.permission.CAMERA), CAMERA_PERMISSION_REQUEST_CODE)
+    }
 
-                override fun onDisconnected(camera: CameraDevice) {
-                    _camera.value?.close()
-                }
+    fun requestCameraService(getSystemService: (String) -> Any) {
+        this.cameraManager = getSystemService(Context.CAMERA_SERVICE) as CameraManager
+    }
 
-                override fun onError(camera: CameraDevice, error: Int) {
-                    Log.w("JOHNNY", "ERROR AL ABRIR LA CAMARA")
-                    _camera.value?.close()
-                    _camera.value = null
-                }
-            }, null)
-        } catch (e: CameraAccessException) {
-            throw IllegalStateException("There is no camera access") as Throwable
-        }
+    fun openCamera(context: Context) {
+        if (checkSelfPermission(context, Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED) return
+
+        val cameraId = cameraManager.cameraIdList.firstOrNull() ?: return
+
+        cameraManager.openCamera(cameraId, object : CameraDevice.StateCallback() {
+            override fun onOpened(camera: CameraDevice) {
+                _camera.postValue(camera)
+            }
+
+            override fun onDisconnected(camera: CameraDevice) {
+                camera.close()
+            }
+
+            override fun onError(camera: CameraDevice, error: Int) {
+                camera.close()
+                _camera.postValue(null)
+            }
+        }, null)
     }
 }
