@@ -1,5 +1,10 @@
 package com.neorefraction.htm1_aiassistant.view
 
+import android.annotation.SuppressLint
+import android.content.BroadcastReceiver
+import android.content.Context
+import android.content.Intent
+import android.content.IntentFilter
 import android.graphics.SurfaceTexture
 import android.hardware.camera2.CameraAccessException
 import android.hardware.camera2.CameraCaptureSession
@@ -12,6 +17,7 @@ import androidx.core.view.WindowInsetsControllerCompat
 
 // Camera required imports
 import android.hardware.camera2.CameraDevice  // New API (hardware.Camera is deprecated)
+import android.util.Log
 import android.view.Surface
 import android.view.TextureView
 import android.widget.Toast
@@ -24,6 +30,18 @@ class MainActivity : AppCompatActivity() {
     private val viewModel: MainViewModel by viewModels()
     private lateinit var textureView: TextureView
 
+    private val speechReceiver = object : BroadcastReceiver() {
+        override fun onReceive(context: Context, intent: Intent) {
+            val command = intent.getStringExtra("command")
+            when (command) {
+                "GEPETO" -> {
+                    Log.i("JOHNNY", "En que puedo ayudarte?")
+                }
+            }
+        }
+    }
+
+    @SuppressLint("UnspecifiedRegisterReceiverFlag")
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
@@ -34,6 +52,9 @@ class MainActivity : AppCompatActivity() {
         setupFullScreenUI()
         setupCameraSurfaceListener()
         observeViewModel()
+
+        val intentFilter = IntentFilter("com.realwear.wearhf.intent.action.SPEECH_EVENT")
+        registerReceiver(speechReceiver, intentFilter)
     }
 
     private fun observeViewModel() {
