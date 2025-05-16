@@ -1,5 +1,6 @@
 package com.neorefraction.htm1_aiassistant.view
 
+// Camera required imports
 import android.annotation.SuppressLint
 import android.content.BroadcastReceiver
 import android.content.Context
@@ -8,22 +9,28 @@ import android.content.IntentFilter
 import android.graphics.SurfaceTexture
 import android.hardware.camera2.CameraAccessException
 import android.hardware.camera2.CameraCaptureSession
+import android.hardware.camera2.CameraDevice
 import android.os.Bundle
-import androidx.activity.enableEdgeToEdge
-import androidx.appcompat.app.AppCompatActivity
-import androidx.core.view.ViewCompat
-import androidx.core.view.WindowInsetsCompat
-import androidx.core.view.WindowInsetsControllerCompat
-
-// Camera required imports
-import android.hardware.camera2.CameraDevice  // New API (hardware.Camera is deprecated)
 import android.util.Log
 import android.view.Surface
 import android.view.TextureView
 import android.widget.Toast
+import androidx.activity.enableEdgeToEdge
 import androidx.activity.viewModels
+import androidx.appcompat.app.AppCompatActivity
+import androidx.core.view.ViewCompat
+import androidx.core.view.WindowInsetsCompat
+import androidx.core.view.WindowInsetsControllerCompat
 import com.neorefraction.htm1_aiassistant.R
 import com.neorefraction.htm1_aiassistant.viewmodel.MainViewModel
+
+private const val ACTION_TTS = "com.realwear.wearhf.intent.action.TTS"
+
+private const val EXTRA_TEXT = "text_to_speak"
+private const val EXTRA_ID = "tts_id"
+private const val EXTRA_PAUSE = "pause_speech_recognizer"
+
+private const val TTS_REQUEST_CODE = 34
 
 class MainActivity : AppCompatActivity() {
 
@@ -36,6 +43,7 @@ class MainActivity : AppCompatActivity() {
             when (command) {
                 "GEPETO" -> {
                     Log.i("JOHNNY", "En que puedo ayudarte?")
+                    textToSpeech("En que puedo ayudarte?")
                 }
             }
         }
@@ -127,5 +135,14 @@ class MainActivity : AppCompatActivity() {
         if (grantResults.isNotEmpty()) {
             viewModel.setPermission(grantResults[0])
         }
+    }
+
+    private fun textToSpeech(text: String) {
+
+        val intent = Intent(ACTION_TTS)
+        intent.putExtra(EXTRA_TEXT, text)
+        intent.putExtra(EXTRA_ID, TTS_REQUEST_CODE)
+        intent.putExtra(EXTRA_PAUSE, false)
+        sendBroadcast(intent)
     }
 }
