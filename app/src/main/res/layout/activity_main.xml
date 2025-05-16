@@ -11,7 +11,6 @@
         android:id="@+id/tvCamera"
         android:contentDescription="@string/cameraDescription"
         android:layout_width="match_parent"
-        android:layout_height="match_parent"
-        android:scaleType="fitCenter" />
+        android:layout_height="match_parent" />
 
 </LinearLayout>
