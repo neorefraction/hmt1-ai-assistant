@@ -5,7 +5,7 @@
     android:layout_height="match_parent"
     android:orientation="vertical"
     android:id="@+id/main"
-    android:contentDescription="hf_add_commands:GEPETO">
+    android:contentDescription="hf_add_commands:Hola Gepeto">
 
     <TextureView
         android:id="@+id/tvCamera"
