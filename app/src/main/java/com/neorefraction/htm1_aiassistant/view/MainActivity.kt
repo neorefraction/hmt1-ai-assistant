@@ -32,13 +32,30 @@ import com.neorefraction.htm1_aiassistant.viewmodel.ViewModel
 import io.ktor.client.*
 import io.ktor.client.call.body
 import io.ktor.client.engine.cio.*
-import io.ktor.client.request.parameter
 import io.ktor.client.request.post
 import kotlinx.serialization.json.JsonElement
 
 import androidx.lifecycle.lifecycleScope
 import kotlinx.coroutines.launch
 import kotlinx.serialization.json.jsonObject
+
+import com.neorefraction.htm1_aiassistant.BuildConfig
+import io.ktor.client.plugins.contentnegotiation.ContentNegotiation
+import io.ktor.client.request.setBody
+import io.ktor.http.ContentType
+import io.ktor.http.HttpHeaders
+import io.ktor.http.contentType
+import io.ktor.http.headers
+import io.ktor.serialization.kotlinx.json.json
+import kotlinx.serialization.Serializable
+import kotlinx.serialization.encodeToString
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.jsonArray
+import kotlinx.serialization.json.jsonPrimitive
+
+val clientID: String = BuildConfig.CLIENT_ID
+val clientSecret: String = BuildConfig.CLIENT_SECRET
+val baseUrl: String = BuildConfig.BASE_URL
 
 /* Constants */
 
@@ -60,6 +77,12 @@ const val SPEECH_ACTION: String = "com.realwear.wearhf.intent.action.SPEECH_EVEN
 // Permissions
 const val PERMISSIONS_REQUEST_CODE = 400
 
+@Serializable
+data class Message(val role: String, val content: String)
+
+@Serializable
+data class RequestPayload(val messages: List<Message>)
+
 class MainActivity : AppCompatActivity() {
 
     // UI Components
@@ -75,19 +98,47 @@ class MainActivity : AppCompatActivity() {
         override fun onReceive(context: Context, intent: Intent) {
             val command = intent.getStringExtra("command")
             when (command) {
-                "Hola Gepeto" -> {
+                "Test" -> {
                     startDictation()
                 }
             }
         }
     }
 
-    val AIResponse = HttpClient(CIO)
+    val AIResponse = HttpClient(CIO) {
+        install(ContentNegotiation) {
+            json(Json {
+                ignoreUnknownKeys = true
+                prettyPrint = true
+                isLenient = true
+            })
+        }
+    }
 
-    suspend fun fetchAIResponse(): JsonElement = AIResponse.post("https://eur-sdr-int-pub.nestle.com/api/dv-exp-explorationkey-genai-api/1/genai/Azure/gpt-4.1/completions?api-version=2024-10-21") {
-        parameter("api-key", myApiKey)
-        parameter("Accept", "application/json")
-        parameter("Content-Type", "application/json")
+    suspend fun fetchAIResponse(prompt: String): JsonElement = AIResponse.post(baseUrl) {
+        // 👉 Headers
+        headers {
+            append("client-id", clientID)
+            append("client-secret", clientSecret)
+            append(HttpHeaders.Accept, "application/json")
+        }
+
+        Log.i("JOHNNY", headers.entries().joinToString())
+
+        // ✅ Usa esta forma para establecer content-type
+        contentType(ContentType.Application.Json)
+
+        // 👉 Body
+        val requestBody = RequestPayload(
+            messages = listOf(
+                Message(
+                    role = "user",
+                    content = "Can you provide me a feedback message to undarstand that you are working properly?"
+                )
+            )
+        )
+
+        setBody(Json.encodeToString(RequestPayload.serializer(), requestBody)) // Automáticamente lo convierte a JSON
     }.body()
 
     @SuppressLint("UnspecifiedRegisterReceiverFlag")
@@ -115,6 +166,9 @@ class MainActivity : AppCompatActivity() {
         // Adds a callback for user commands over RealWear device
         val intentFilter = IntentFilter(SPEECH_ACTION)
         registerReceiver(speechReceiver, intentFilter)
+
+        Log.i("Johnny", clientID)
+        Log.i("Johnny", clientSecret)
     }
 
     /**
@@ -251,9 +305,17 @@ class MainActivity : AppCompatActivity() {
             // Lanzamos la corutina en el lifecycleScope del Activity:
             lifecycleScope.launch {
                 try {
-                    val aiResponse: JsonElement = fetchAIResponse().jsonObject
+                    val aiResponse: JsonElement = fetchAIResponse(texto).jsonObject
+                    Log.i("Johnny", aiResponse.toString())
+                    val content = aiResponse
+                        .jsonObject["choices"]                // Accede a la lista de choices
+                        ?.jsonArray?.getOrNull(0)            // Toma el primer objeto del array
+                        ?.jsonObject?.get("message")         // Accede al objeto message
+                        ?.jsonObject?.get("content")         // Finalmente accede al contenido
+                        ?.jsonPrimitive?.content             // Obtén el texto como String
+
                     // Aquí ya estás en la Main (por defecto) y puedes actualizar UI:
-                    Log.i("JOHNNY", "Respuesta AI: ${aiResponse[]}")
+                    Log.i("JOHNNY", "Respuesta AI: $content")
                     // p.ej. showOnScreen(aiResponse)
                 } catch (e: Exception) {
                     Log.e("JOHNNY", "Error al llamar a AI", e)
