@@ -28,6 +28,18 @@ import androidx.core.view.WindowInsetsControllerCompat
 import com.neorefraction.htm1_aiassistant.R
 import com.neorefraction.htm1_aiassistant.viewmodel.ViewModel
 
+// Ktor
+import io.ktor.client.*
+import io.ktor.client.call.body
+import io.ktor.client.engine.cio.*
+import io.ktor.client.request.parameter
+import io.ktor.client.request.post
+import kotlinx.serialization.json.JsonElement
+
+import androidx.lifecycle.lifecycleScope
+import kotlinx.coroutines.launch
+import kotlinx.serialization.json.jsonObject
+
 /* Constants */
 
 // Dictation constants
@@ -69,6 +81,14 @@ class MainActivity : AppCompatActivity() {
             }
         }
     }
+
+    val AIResponse = HttpClient(CIO)
+
+    suspend fun fetchAIResponse(): JsonElement = AIResponse.post("https://eur-sdr-int-pub.nestle.com/api/dv-exp-explorationkey-genai-api/1/genai/Azure/gpt-4.1/completions?api-version=2024-10-21") {
+        parameter("api-key", myApiKey)
+        parameter("Accept", "application/json")
+        parameter("Content-Type", "application/json")
+    }.body()
 
     @SuppressLint("UnspecifiedRegisterReceiverFlag")
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -228,7 +248,17 @@ class MainActivity : AppCompatActivity() {
         if (requestCode == DICTATION_REQUEST_CODE && resultCode == Activity.RESULT_OK) {
             val texto = data?.getStringExtra("result") ?: ""
             Log.i("JOHNNY", "Transcripción: $texto")
-            // TODO: Send query to AI service
+            // Lanzamos la corutina en el lifecycleScope del Activity:
+            lifecycleScope.launch {
+                try {
+                    val aiResponse: JsonElement = fetchAIResponse().jsonObject
+                    // Aquí ya estás en la Main (por defecto) y puedes actualizar UI:
+                    Log.i("JOHNNY", "Respuesta AI: ${aiResponse[]}")
+                    // p.ej. showOnScreen(aiResponse)
+                } catch (e: Exception) {
+                    Log.e("JOHNNY", "Error al llamar a AI", e)
+                }
+            }
         }
     }
 

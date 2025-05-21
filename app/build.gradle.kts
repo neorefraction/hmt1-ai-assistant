@@ -35,8 +35,13 @@ android {
     }
 }
 
-dependencies {
+val ktor_version: String by project
 
+dependencies {
+    // Ktor
+    implementation("io.ktor:ktor-client-core:$ktor_version")
+    implementation("io.ktor:ktor-client-cio:$ktor_version")
+    implementation(libs.kotlinx.serialization.json)
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.appcompat)
     implementation(libs.material)
