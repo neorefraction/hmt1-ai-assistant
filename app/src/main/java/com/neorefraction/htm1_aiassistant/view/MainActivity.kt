@@ -1,372 +1,132 @@
 package com.neorefraction.htm1_aiassistant.view
 
-// Camera required imports
+
 import android.Manifest
 import android.annotation.SuppressLint
 import android.app.Activity
-import android.content.BroadcastReceiver
-import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
 import android.content.pm.PackageManager
-import android.graphics.SurfaceTexture
-import android.hardware.camera2.CameraAccessException
-import android.hardware.camera2.CameraCaptureSession
-import android.hardware.camera2.CameraDevice
-import android.hardware.camera2.CameraManager
-import android.hardware.camera2.CaptureRequest
+import android.graphics.Bitmap
 import android.os.Bundle
 import android.util.Log
-import android.view.Surface
 import android.view.TextureView
-import android.widget.Toast
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.viewModels
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
-import com.neorefraction.htm1_aiassistant.R
-import com.neorefraction.htm1_aiassistant.viewmodel.ViewModel
-
-// Ktor
-import io.ktor.client.*
-import io.ktor.client.call.body
-import io.ktor.client.engine.cio.*
-import io.ktor.client.request.post
-import kotlinx.serialization.json.JsonElement
-
 import androidx.lifecycle.lifecycleScope
+import com.neorefraction.htm1_aiassistant.R
+import com.neorefraction.htm1_aiassistant.ai.AiClient
+import com.neorefraction.htm1_aiassistant.ai.AiParser
+import com.neorefraction.htm1_aiassistant.camera.CameraController
+import com.neorefraction.htm1_aiassistant.dictation.DictationManager
+import com.neorefraction.htm1_aiassistant.tts.TextToSpeechManager
+import com.neorefraction.htm1_aiassistant.viewmodel.ViewModel
 import kotlinx.coroutines.launch
-import kotlinx.serialization.json.jsonObject
 
-import com.neorefraction.htm1_aiassistant.BuildConfig
-import io.ktor.client.plugins.DefaultRequest
-import io.ktor.client.plugins.contentnegotiation.ContentNegotiation
-import io.ktor.client.request.setBody
-import io.ktor.http.ContentType
-import io.ktor.http.HttpHeaders
-import io.ktor.http.contentType
-import io.ktor.http.headers
-import io.ktor.serialization.kotlinx.json.json
-import kotlinx.serialization.Serializable
-import kotlinx.serialization.encodeToString
-import kotlinx.serialization.json.Json
-import kotlinx.serialization.json.contentOrNull
-import kotlinx.serialization.json.jsonArray
-import kotlinx.serialization.json.jsonPrimitive
 
-val clientID: String = BuildConfig.CLIENT_ID
-val clientSecret: String = BuildConfig.CLIENT_SECRET
-val baseUrl: String = BuildConfig.BASE_URL
-
-/* Constants */
-
-// Dictation constants
-const val DICTATION_REQUEST_CODE = 100
-const val DICTATION_ACTION = "com.realwear.keyboard.intent.action.DICTATION"
-const val DICTATION_PACKAGE = "com.realwear.wearhf.intent.extra.SOURCE_PACKAGE"
-
-// Text to Speech Intents
-const val ACTION_TTS = "com.realwear.wearhf.intent.action.TTS"
-const val EXTRA_TEXT = "text_to_speak"
-const val EXTRA_ID = "tts_id"
-const val EXTRA_PAUSE = "pause_speech_recognizer"
-const val TTS_REQUEST_CODE = 34
 
 // Speech
 const val SPEECH_ACTION: String = "com.realwear.wearhf.intent.action.SPEECH_EVENT"
-
 // Permissions
 const val PERMISSIONS_REQUEST_CODE = 400
 
-@Serializable
-data class Message(val role: String, val content: String)
-
-@Serializable
-data class RequestPayload(val messages: List<Message>)
-
 class MainActivity : AppCompatActivity() {
 
-    // UI Components
     private lateinit var textureView: TextureView
-
     private val viewModel: ViewModel by viewModels()
 
-    // Camera
-    private lateinit var cameraManager: CameraManager
-    private var _camera: CameraDevice? = null
-
-    private val speechReceiver = object : BroadcastReceiver() {
-        override fun onReceive(context: Context, intent: Intent) {
-            val command = intent.getStringExtra("command")
-            when (command) {
-                "Test" -> {
-                    startDictation()
-                }
-            }
-        }
-    }
-
-    val AIResponse = HttpClient(CIO) {
-        install(ContentNegotiation) {
-            json(Json {
-                ignoreUnknownKeys = true
-                prettyPrint = true
-                isLenient = true
-            })
-        }
-        install(DefaultRequest) {
-            headers.append("client_id", clientID)
-            headers.append("client_secret", clientSecret)
-        }
-    }
-
-    suspend fun fetchAIResponse(prompt: String): JsonElement = AIResponse.post(baseUrl) {
-        // 👉 Headers
-        headers {
-            append(HttpHeaders.Accept, "application/json")
-        }
-
-        // ✅ Usa esta forma para establecer content-type
-        contentType(ContentType.Application.Json)
-
-        // 👉 Body
-        val requestBody = RequestPayload(
-            messages = listOf(
-                Message(
-                    role = "system",
-                    content = "Responde siempre en español y evita el uso de emojis"
-                ),
-                Message(
-                    role = "user",
-                    content = prompt
-                )
-            )
-        )
-        setBody(Json.encodeToString(RequestPayload.serializer(), requestBody)) // Automáticamente lo convierte a JSON
-    }.body()
+    private lateinit var cameraController: CameraController
+    private val aiClient = AiClient()
+    private val tts = TextToSpeechManager()
+    private val dictation = DictationManager()
 
     @SuppressLint("UnspecifiedRegisterReceiverFlag")
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        setContentView(R.layout.activity_main)
+        setupFullScreenUI()
 
-        // Set activity layout
-        this.setContentView(R.layout.activity_main)
-        this.setupFullScreenUI()
-
-        // Request application permissions
-        this.requestPermissions(
+        requestPermissions(
             arrayOf(Manifest.permission.CAMERA, Manifest.permission.RECORD_AUDIO),
-            PERMISSIONS_REQUEST_CODE)
+            PERMISSIONS_REQUEST_CODE
+        )
 
-        // Get the camera Service to manage camera
-        this.cameraManager = getSystemService(CAMERA_SERVICE) as CameraManager
+        textureView = findViewById(R.id.tvCamera)
+        cameraController = CameraController(this, textureView)
 
-        // Setup texture view listener
-        this.setupTextureSurfaceListener()
+        setupTextureSurfaceListener()
+        observeViewModels()
 
-        // Setup camera ViewModels Observers
-        this.observeViewModels()
-
-        // Adds a callback for user commands over RealWear device
-        val intentFilter = IntentFilter(SPEECH_ACTION)
-        registerReceiver(speechReceiver, intentFilter)
+        registerReceiver(dictation.receiver(::onCommandReceived), IntentFilter(SPEECH_ACTION))
     }
 
-    /**
-     * Setup the camera ViewModel elements to be observed
-     */
-    private fun observeViewModels() {
-        this.viewModel.isCameraReady.observe(this) { isCameraReady ->
-            if (isCameraReady)
-                openCamera()
-            else
-                closeCamera()
+    private fun onCommandReceived(command: String?) {
+        if (command == "Test") {
+            dictation.start(this)
+            this.viewModel.setPhoto(cameraController.launchCameraRawPhoto())
         }
     }
 
-    /**
-     * Setup Layout to support full screen
-     */
+    private fun observeViewModels() {
+        viewModel.isCameraReady.observe(this) { ready ->
+            if (ready) cameraController.open() else cameraController.close()
+        }
+
+        viewModel.bothResultsReady.observe(this) { (text, image) ->
+            lifecycleScope.launch {
+                try {
+                    val response = aiClient.fetchResponse(text, "data:image/jpeg;base64,$image")
+                    Log.i("IMAGEN JOHNNY", image)
+                    Log.e("MENSAJE JOHNNY", response.toString())
+                    val parsed = AiParser.extractContent(response)
+                    Log.e("MENSAJE JOHNNY", parsed.toString())
+                    tts.speak(this@MainActivity, parsed ?: "Error al enviar mensaje")
+                } catch (e: Exception) {
+                    tts.speak(this@MainActivity, "Error al enviar mensaje")
+                    Log.e("MENSAJE JOHNNY", e.stackTraceToString())
+                }
+            }
+        }
+    }
+
     private fun setupFullScreenUI() {
-
-        // enables full screen size
         enableEdgeToEdge()
-
-        // Applies auto hiding for screen Insets
         WindowInsetsControllerCompat(window, window.decorView).apply {
             hide(WindowInsetsCompat.Type.systemBars())
             systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
         }
-
-        // Applies padding when Insets are shown on the window
         ViewCompat.setOnApplyWindowInsetsListener(findViewById(R.id.main)) { view, insets ->
-            val systemBars = insets.getInsets(WindowInsetsCompat.Type.systemBars())
-            view.setPadding(systemBars.left, systemBars.top, systemBars.right, systemBars.bottom)
+            val sysBars = insets.getInsets(WindowInsetsCompat.Type.systemBars())
+            view.setPadding(sysBars.left, sysBars.top, sysBars.right, sysBars.bottom)
             insets
         }
     }
 
-    /**
-     * Setup texture view listeners to react on TextureView lifecycle
-     */
     private fun setupTextureSurfaceListener() {
-        this.textureView = findViewById(R.id.tvCamera)
-        this.textureView.surfaceTextureListener = object : TextureView.SurfaceTextureListener {
-            override fun onSurfaceTextureAvailable(surface: SurfaceTexture, width: Int, height: Int) {
-                viewModel.setSurfaceAvailability(true)
-            }
-            override fun onSurfaceTextureDestroyed(surface: SurfaceTexture): Boolean {
-                viewModel.setSurfaceAvailability(false)
-                return false
-            }
-
-            override fun onSurfaceTextureUpdated(surface: SurfaceTexture) {}
-            override fun onSurfaceTextureSizeChanged(surface: SurfaceTexture, width: Int, height: Int) {}
-        }
-    }
-
-    /**
-     * Links a hardware camera to the application
-     */
-    private fun openCamera() {
-        if (checkSelfPermission(Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED)
-            return
-
-        val cameraId = this.cameraManager.cameraIdList.firstOrNull() ?: return
-
-        this.cameraManager.openCamera(cameraId, object : CameraDevice.StateCallback() {
-            override fun onOpened(camera: CameraDevice) {
-                _camera = camera
-                startPreview()
-            }
-
-            override fun onDisconnected(camera: CameraDevice) {
-                camera.close()
-            }
-
-            override fun onError(camera: CameraDevice, error: Int) {
-                camera.close()
-                _camera = null
-            }
-        }, null)
-    }
-
-    /**
-     * Close camera
-     */
-    private fun closeCamera() {
-        this._camera?.close()
-        this._camera = null
-    }
-
-    private fun startPreview() {
-        val surfaceTexture = textureView.surfaceTexture ?: return
-        prepareSurface(surfaceTexture)?.let { surface ->
-            val previewRequest = buildPreviewRequest(surface) ?: return
-            createCameraPreviewSession(surface, previewRequest)
-        }
-    }
-
-    private fun prepareSurface(surfaceTexture: SurfaceTexture): Surface? {
-        return try {
-            surfaceTexture.setDefaultBufferSize(1920, 1080)
-            Surface(surfaceTexture)
-        } catch (e: Exception) {
-            Log.e("CameraPreview", "Error preparando Surface", e)
-            null
-        }
-    }
-
-    private fun buildPreviewRequest(surface: Surface): CaptureRequest? {
-        return try {
-            _camera?.createCaptureRequest(CameraDevice.TEMPLATE_PREVIEW)?.apply {
-                addTarget(surface)
-            }?.build()
-        } catch (e: CameraAccessException) {
-            Log.e("CameraPreview", "Error construyendo la solicitud de previsualización", e)
-            null
-        }
-    }
-
-    private fun createCameraPreviewSession(surface: Surface, request: CaptureRequest) {
-        _camera?.createCaptureSession(listOf(surface), object : CameraCaptureSession.StateCallback() {
-            override fun onConfigured(session: CameraCaptureSession) {
-                try {
-                    session.setRepeatingRequest(request, null, null)
-                } catch (e: CameraAccessException) {
-                    Log.e("CameraPreview", "Error al iniciar sesión de cámara", e)
-                }
-            }
-
-            override fun onConfigureFailed(session: CameraCaptureSession) {
-                Toast.makeText(applicationContext, "Configuración de cámara fallida", Toast.LENGTH_SHORT).show()
-            }
-        }, null)
-    }
-
-    /**
-     * Uses RealWear Dictation service to transcript user input
-     */
-    private fun startDictation() {
-        val intent = Intent(DICTATION_ACTION)
-        intent.putExtra(DICTATION_PACKAGE, packageName)
-        startActivityForResult(intent, DICTATION_REQUEST_CODE)
+        textureView.surfaceTextureListener = cameraController.surfaceListener(viewModel)
     }
 
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         super.onActivityResult(requestCode, resultCode, data)
 
-        if (requestCode != DICTATION_REQUEST_CODE || resultCode != Activity.RESULT_OK) return
-
-        val inputText = data?.getStringExtra("result").orEmpty()
-        if (inputText.isBlank()) {
-            textToSpeech("Mensaje vacío detectado")
-            return
-        }
-
-        handleDictationResult(inputText)
-    }
-
-    private fun handleDictationResult(text: String) {
-        val errorMessage = "Error al enviar mensaje"
-
-        lifecycleScope.launch {
-            try {
-                val aiResponse = fetchAIResponse(text)
-                val content = extractContentFromResponse(aiResponse)
-                textToSpeech(content ?: errorMessage)
-            } catch (e: Exception) {
-                textToSpeech(errorMessage)
+        if (dictation.isResult(requestCode, resultCode)) {
+            val result = dictation.extractText(data)
+            if (result.isNullOrBlank()) {
+                tts.speak(this, "Mensaje vacío detectado")
+            } else {
+                viewModel.setDictationResult("Que ves?")
             }
         }
     }
 
-    private fun extractContentFromResponse(response: JsonElement): String? {
-        return response
-            .jsonObject["choices"]
-            ?.jsonArray?.getOrNull(0)
-            ?.jsonObject?.get("message")
-            ?.jsonObject?.get("content")
-            ?.jsonPrimitive?.contentOrNull
-    }
-
-    /**
-     * Set permissions for ViewModel
-     */
-    override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
-        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
-        if (requestCode == PERMISSIONS_REQUEST_CODE && grantResults.size >= 2) {
-            viewModel.setCameraPermission(grantResults[0] == PackageManager.PERMISSION_GRANTED)
+    override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, results: IntArray) {
+        super.onRequestPermissionsResult(requestCode, permissions, results)
+        if (requestCode == PERMISSIONS_REQUEST_CODE && results.size >= 2) {
+            viewModel.setCameraPermission(results[0] == PackageManager.PERMISSION_GRANTED)
         }
-    }
-
-    private fun textToSpeech(text: String) {
-        val intent: Intent = Intent(ACTION_TTS);
-        intent.putExtra(EXTRA_TEXT, text);
-        intent.putExtra(EXTRA_ID, TTS_REQUEST_CODE);
-        intent.putExtra(EXTRA_PAUSE, false);
-        sendBroadcast(intent);
     }
 }
