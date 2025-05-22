@@ -3,11 +3,9 @@ package com.neorefraction.htm1_aiassistant.view
 
 import android.Manifest
 import android.annotation.SuppressLint
-import android.app.Activity
 import android.content.Intent
 import android.content.IntentFilter
 import android.content.pm.PackageManager
-import android.graphics.Bitmap
 import android.os.Bundle
 import android.util.Log
 import android.view.TextureView
@@ -65,7 +63,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun onCommandReceived(command: String?) {
-        if (command == "Test") {
+        if (command == "Hola Gepeto") {
             dictation.start(this)
             this.viewModel.setPhoto(cameraController.launchCameraRawPhoto())
         }
@@ -80,10 +78,7 @@ class MainActivity : AppCompatActivity() {
             lifecycleScope.launch {
                 try {
                     val response = aiClient.fetchResponse(text, "data:image/jpeg;base64,$image")
-                    Log.i("IMAGEN JOHNNY", image)
-                    Log.e("MENSAJE JOHNNY", response.toString())
                     val parsed = AiParser.extractContent(response)
-                    Log.e("MENSAJE JOHNNY", parsed.toString())
                     tts.speak(this@MainActivity, parsed ?: "Error al enviar mensaje")
                 } catch (e: Exception) {
                     tts.speak(this@MainActivity, "Error al enviar mensaje")
@@ -118,7 +113,7 @@ class MainActivity : AppCompatActivity() {
             if (result.isNullOrBlank()) {
                 tts.speak(this, "Mensaje vacío detectado")
             } else {
-                viewModel.setDictationResult("Que ves?")
+                viewModel.setDictationResult(result)
             }
         }
     }
